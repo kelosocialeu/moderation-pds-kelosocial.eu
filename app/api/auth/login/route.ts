@@ -16,17 +16,30 @@ function limited(ip: string) {
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
-  if (limited(ip)) return NextResponse.json({ error: 'Trop de tentatives. Réessayez plus tard.' }, { status: 429 })
+  if (limited(ip)) return NextResponse.redirect(new URL('/?error=rate', req.url), 303)
 
-  let body: { password?: string }
-  try { body = await req.json() } catch { return NextResponse.json({ error: 'Requête invalide.' }, { status: 400 }) }
-  if (!body.password || body.password.length > 256 || !verifyPassword(body.password)) {
+  let password = ''
+  const contentType = req.headers.get('content-type') || ''
+
+  try {
+    if (contentType.includes('application/json')) {
+      const body = await req.json()
+      password = String(body?.password || '')
+    } else {
+      const form = await req.formData()
+      password = String(form.get('password') || '')
+    }
+  } catch {
+    return NextResponse.redirect(new URL('/?error=invalid', req.url), 303)
+  }
+
+  if (!password || password.length > 256 || !verifyPassword(password)) {
     await new Promise((r) => setTimeout(r, 700))
-    return NextResponse.json({ error: 'Accès refusé.' }, { status: 401 })
+    return NextResponse.redirect(new URL('/?error=invalid', req.url), 303)
   }
 
   attempts.delete(ip)
-  const res = NextResponse.json({ ok: true })
+  const res = NextResponse.redirect(new URL('/dashboard', req.url), 303)
   res.cookies.set(sessionCookie.name, createSessionValue(), sessionCookie.options)
   return res
 }
