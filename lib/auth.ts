@@ -1,3 +1,4 @@
+import 'server-only'
 import crypto from 'node:crypto'
 
 const COOKIE = 'kelo_mod_session'
@@ -10,8 +11,15 @@ function secret() {
 }
 
 export function verifyPassword(password: string) {
+  const direct = process.env.ADMIN_PASSWORD
+  if (direct) {
+    const a = Buffer.from(password)
+    const b = Buffer.from(direct)
+    return a.length === b.length && crypto.timingSafeEqual(a, b)
+  }
+
   const expected = process.env.ADMIN_PASSWORD_HASH
-  if (!expected) throw new Error('ADMIN_PASSWORD_HASH is missing')
+  if (!expected) throw new Error('ADMIN_PASSWORD or ADMIN_PASSWORD_HASH is missing')
   const [salt, hash] = expected.split(':')
   if (!salt || !hash) return false
   const derived = crypto.scryptSync(password, salt, 64).toString('hex')
