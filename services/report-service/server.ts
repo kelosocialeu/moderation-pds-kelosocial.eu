@@ -130,6 +130,10 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true })
     }
 
+    if (req.method === 'GET' && url.pathname === '/xrpc/com.atproto.label.queryLabels') {
+      return json(res, 200, { labels: [] })
+    }
+
     if (req.method === 'POST' && url.pathname === `/xrpc/${LXM}`) {
       const auth = await authenticateServiceJwt(req)
       const input = await body(req)
