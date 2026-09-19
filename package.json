@@ -7,9 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "report-service:dev": "tsx services/report-service/server.ts",
+    "report-service:dev": "tsx services/report-service/server.mts",
     "report-service:build": "tsc -p services/report-service/tsconfig.json",
-    "report-service:start": "node services/report-service/dist/server.js"
+    "report-service:start": "node services/report-service/dist/server.mjs"
   },
   "dependencies": {
     "@atproto/identity": "latest",
