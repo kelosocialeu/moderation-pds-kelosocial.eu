@@ -9,5 +9,7 @@
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["server.ts"]
+  "include": [
+    "server.mts"
+  ]
 }
