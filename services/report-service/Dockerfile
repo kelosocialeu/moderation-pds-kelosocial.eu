@@ -9,4 +9,4 @@ RUN mkdir -p /app/data
 ENV NODE_ENV=production
 ENV REPORT_SERVICE_PORT=3100
 EXPOSE 3100
-CMD ["node", "services/report-service/dist/server.js"]
+CMD ["node", "services/report-service/dist/server.mjs"]
