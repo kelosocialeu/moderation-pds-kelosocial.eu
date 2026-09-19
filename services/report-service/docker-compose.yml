@@ -1,0 +1,18 @@
+services:
+  kelo-report-service:
+    build:
+      context: ../..
+      dockerfile: services/report-service/Dockerfile
+    container_name: kelo-report-service
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      REPORT_SERVICE_PORT: 3100
+      REPORT_SERVICE_DID: ${REPORT_SERVICE_DID}
+      REPORT_SERVICE_HOST: ${REPORT_SERVICE_HOST}
+      MODERATION_API_TOKEN: ${MODERATION_API_TOKEN}
+      REPORT_DB_PATH: /app/data/reports.db
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:3100:3100"
