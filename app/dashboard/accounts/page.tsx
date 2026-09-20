@@ -15,13 +15,29 @@ async function getAccounts(): Promise<Account[]> {
   try {
     const repos = await pdsRequest('/xrpc/com.atproto.sync.listRepos?limit=100')
     if (!repos.response.ok || !repos.data || typeof repos.data !== 'object' || !('repos' in repos.data)) return []
-    const list = (repos.data as { repos?: Array<{ did?: string }> }).repos ?? []
+    const list = (repos.data as { repos?: Array<{ did?: string; active?: boolean }> }).repos ?? []
     const dids = list.map((r) => r.did).filter((did): did is string => Boolean(did))
     if (!dids.length) return []
 
-    const infos = await pdsRequest('/xrpc/com.atproto.admin.getAccountInfos', { dids })
-    if (!infos.response.ok || !infos.data || typeof infos.data !== 'object' || !('infos' in infos.data)) return []
-    return ((infos.data as { infos?: Account[] }).infos ?? [])
+    // Do not use com.atproto.admin.getAccountInfos here: the PDS may expose
+    // admin routes with a different auth mode. describeRepo is public and
+    // provides the DID/handle pair needed by this console.
+    const results = await Promise.allSettled(
+      dids.map(async (did) => {
+        const repo = await pdsRequest(
+          `/xrpc/com.atproto.repo.describeRepo?repo=${encodeURIComponent(did)}`,
+        )
+        if (!repo.response.ok || !repo.data || typeof repo.data !== 'object') return null
+        const data = repo.data as { did?: string; handle?: string }
+        if (!data.did) return null
+        return { did: data.did, handle: data.handle, status: 'active', deactivated: false } satisfies Account
+      }),
+    )
+
+    return results
+      .filter((result): result is PromiseFulfilledResult<Account | null> => result.status === 'fulfilled')
+      .map((result) => result.value)
+      .filter((account): account is Account => account !== null)
   } catch {
     return []
   }
