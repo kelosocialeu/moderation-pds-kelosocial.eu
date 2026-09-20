@@ -48,6 +48,20 @@ CREATE TABLE IF NOT EXISTS labels (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS labels_uri ON labels(uri);
+
+CREATE TABLE IF NOT EXISTS labels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  src TEXT NOT NULL,
+  uri TEXT NOT NULL,
+  cid TEXT,
+  val TEXT NOT NULL,
+  neg INTEGER NOT NULL DEFAULT 0,
+  cts TEXT NOT NULL,
+  exp TEXT,
+  sig TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS labels_uri ON labels(uri);
 CREATE INDEX IF NOT EXISTS labels_src_uri ON labels(src, uri);
 `)
 
