@@ -184,16 +184,16 @@ function labelBytes(label: Record<string, unknown>) {
 }
 
 async function createSignedLabel(input: { uri: string; cid?: string; val: string; neg?: boolean; exp?: string }) {
-  const label: Record<string, unknown> = noUndefinedVals({
-    ver: 1,
+  const label = {
+    ver: 1 as const,
     src: SERVICE_DID,
     uri: input.uri,
-    cid: input.cid,
+    ...(input.cid ? { cid: input.cid } : {}),
     val: input.val,
-    neg: input.neg === true ? true : undefined,
+    ...(input.neg === true ? { neg: true as const } : {}),
     cts: new Date().toISOString(),
-    exp: input.exp,
-  })
+    ...(input.exp ? { exp: input.exp } : {}),
+  }
   const sig = await signingKey.sign(labelBytes(label))
   return { ...label, sig }
 }
