@@ -9,7 +9,9 @@ const PORT = Number(process.env.REPORT_SERVICE_PORT || 3100)
 const SERVICE_DID = process.env.REPORT_SERVICE_DID || ''
 const API_TOKEN = process.env.MODERATION_API_TOKEN || ''
 const DB_PATH = process.env.REPORT_DB_PATH || './data/reports.db'
-const LXM = 'com.atproto.moderation.createReport'
+const REPORT_LXM = 'com.atproto.moderation.createReport'
+const LABELER_SERVICE = '#atproto_labeler'
+const LABELER_SERVICE_TYPE = 'AtprotoLabeler'
 
 if (!SERVICE_DID.startsWith('did:')) throw new Error('REPORT_SERVICE_DID is required')
 if (!API_TOKEN) throw new Error('MODERATION_API_TOKEN is required')
@@ -32,6 +34,21 @@ CREATE TABLE IF NOT EXISTS reports (
   service_jti TEXT UNIQUE
 );
 CREATE INDEX IF NOT EXISTS reports_status_created ON reports(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS labels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  src TEXT NOT NULL,
+  uri TEXT NOT NULL,
+  cid TEXT,
+  val TEXT NOT NULL,
+  neg INTEGER NOT NULL DEFAULT 0,
+  cts TEXT NOT NULL,
+  exp TEXT,
+  sig TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS labels_uri ON labels(uri);
+CREATE INDEX IF NOT EXISTS labels_src_uri ON labels(src, uri);
 `)
 
 const idResolver = new IdResolver({ timeout: 5000 })
@@ -49,13 +66,13 @@ async function authenticateServiceJwt(req: http.IncomingMessage) {
     throw new Error('Invalid JWT')
   }
 
-  const allowedAudiences = new Set([SERVICE_DID, `${SERVICE_DID}#atproto_labeler`])
+  const allowedAudiences = new Set([SERVICE_DID, `${SERVICE_DID}${LABELER_SERVICE}`])
   if (!allowedAudiences.has(aud)) throw new Error('Invalid JWT audience')
 
   const payload = await verifyJwt(
     token,
     null,
-    LXM,
+    REPORT_LXM,
     async (iss, forceRefresh) => idResolver.did.resolveAtprotoKey(iss.split('#')[0], forceRefresh),
   )
 
@@ -93,12 +110,37 @@ function readReports(status = 'open') {
   return rows.map((row) => ({ ...row, subject: JSON.parse(String(row.subject)) }))
 }
 
+function readLabels(uriPatterns: string[], limit: number) {
+  const normalizedLimit = Math.max(1, Math.min(limit || 50, 250))
+  if (uriPatterns.length === 0 || uriPatterns.includes('*')) {
+    return db.prepare(`
+      SELECT src, uri, cid, val, neg, cts, exp, sig
+      FROM labels
+      ORDER BY id ASC
+      LIMIT ?
+    `).all(normalizedLimit)
+  }
+
+  const rows: Array<Record<string, unknown>> = []
+  const stmt = db.prepare(`
+    SELECT src, uri, cid, val, neg, cts, exp, sig
+    FROM labels
+    WHERE uri = ?
+    ORDER BY id ASC
+    LIMIT ?
+  `)
+  for (const uri of uriPatterns.slice(0, 250)) {
+    rows.push(...(stmt.all(uri, normalizedLimit) as Array<Record<string, unknown>>))
+  }
+  return rows.slice(0, normalizedLimit)
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://127.0.0.1:${PORT}`)
 
     if (req.method === 'GET' && url.pathname === '/health') {
-      return json(res, 200, { ok: true, service: SERVICE_DID })
+      return json(res, 200, { ok: true, service: SERVICE_DID, labeler: true })
     }
 
     if (req.method === 'GET' && url.pathname === '/.well-known/did.json') {
@@ -106,8 +148,8 @@ const server = http.createServer(async (req, res) => {
         '@context': ['https://www.w3.org/ns/did/v1'],
         id: SERVICE_DID,
         service: [{
-          id: `${SERVICE_DID}#atproto_labeler`,
-          type: 'BskyLabeler',
+          id: `${SERVICE_DID}${LABELER_SERVICE}`,
+          type: LABELER_SERVICE_TYPE,
           serviceEndpoint: `https://${process.env.REPORT_SERVICE_HOST || 'reports.kelosocial.eu'}`,
         }],
       }
@@ -131,10 +173,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/xrpc/com.atproto.label.queryLabels') {
-      return json(res, 200, { labels: [] })
+      const uriPatterns = url.searchParams.getAll('uriPatterns')
+      const limit = Number(url.searchParams.get('limit') || 50)
+      return json(res, 200, { labels: readLabels(uriPatterns, limit) })
     }
 
-    if (req.method === 'POST' && url.pathname === `/xrpc/${LXM}`) {
+    if (req.method === 'POST' && url.pathname === `/xrpc/${REPORT_LXM}`) {
       const auth = await authenticateServiceJwt(req)
       const input = await body(req)
       const subject = input?.subject
