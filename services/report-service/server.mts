@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import Database from 'better-sqlite3'
 import { IdResolver } from '@atproto/identity'
+import { cborEncode, noUndefinedVals } from '@atproto/common'
+import { Secp256k1Keypair } from '@atproto/crypto'
 import { verifyJwt } from '@atproto/xrpc-server'
 
 const PORT = Number(process.env.REPORT_SERVICE_PORT || 3100)
@@ -12,6 +14,7 @@ const DB_PATH = process.env.REPORT_DB_PATH || './data/reports.db'
 const REPORT_LXM = 'com.atproto.moderation.createReport'
 const LABELER_SERVICE = '#atproto_labeler'
 const LABELER_SERVICE_TYPE = 'AtprotoLabeler'
+const LABEL_KEY_PATH = process.env.LABEL_SIGNING_KEY_PATH || path.join(path.dirname(DB_PATH), 'label-signing-key.hex')
 
 if (!SERVICE_DID.startsWith('did:')) throw new Error('REPORT_SERVICE_DID is required')
 if (!API_TOKEN) throw new Error('MODERATION_API_TOKEN is required')
@@ -44,21 +47,7 @@ CREATE TABLE IF NOT EXISTS labels (
   neg INTEGER NOT NULL DEFAULT 0,
   cts TEXT NOT NULL,
   exp TEXT,
-  sig TEXT,
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS labels_uri ON labels(uri);
-
-CREATE TABLE IF NOT EXISTS labels (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  src TEXT NOT NULL,
-  uri TEXT NOT NULL,
-  cid TEXT,
-  val TEXT NOT NULL,
-  neg INTEGER NOT NULL DEFAULT 0,
-  cts TEXT NOT NULL,
-  exp TEXT,
-  sig TEXT,
+  sig BLOB,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS labels_uri ON labels(uri);
@@ -66,6 +55,28 @@ CREATE INDEX IF NOT EXISTS labels_src_uri ON labels(src, uri);
 `)
 
 const idResolver = new IdResolver({ timeout: 5000 })
+
+async function loadSigningKey() {
+  let hex = process.env.LABEL_SIGNING_KEY_HEX?.trim()
+  if (!hex) {
+    try {
+      hex = fs.readFileSync(LABEL_KEY_PATH, 'utf8').trim()
+    } catch {}
+  }
+  let key: Secp256k1Keypair
+  if (hex) {
+    if (!/^[0-9a-f]{64}$/i.test(hex)) throw new Error('LABEL_SIGNING_KEY_HEX must be 64 hex characters')
+    key = await Secp256k1Keypair.import(hex, { exportable: true })
+  } else {
+    key = await Secp256k1Keypair.create({ exportable: true })
+    const exported = await key.export()
+    fs.writeFileSync(LABEL_KEY_PATH, Buffer.from(exported).toString('hex') + '\n', { mode: 0o600 })
+  }
+  return key
+}
+
+const signingKey = await loadSigningKey()
+const labelPublicKeyMultibase = signingKey.did().replace('did:key:', '')
 
 async function authenticateServiceJwt(req: http.IncomingMessage) {
   const header = req.headers.authorization
@@ -126,27 +137,65 @@ function readReports(status = 'open') {
 
 function readLabels(uriPatterns: string[], limit: number) {
   const normalizedLimit = Math.max(1, Math.min(limit || 50, 250))
+  const rows: Array<Record<string, unknown>> = []
   if (uriPatterns.length === 0 || uriPatterns.includes('*')) {
-    return db.prepare(`
+    rows.push(...(db.prepare(`
       SELECT src, uri, cid, val, neg, cts, exp, sig
       FROM labels
       ORDER BY id ASC
       LIMIT ?
-    `).all(normalizedLimit)
+    `).all(normalizedLimit) as Array<Record<string, unknown>>)
+  } else {
+    const stmt = db.prepare(`
+      SELECT src, uri, cid, val, neg, cts, exp, sig
+      FROM labels
+      WHERE uri = ? OR (? LIKE '%' AND uri LIKE ?)
+      ORDER BY id ASC
+      LIMIT ?
+    `)
+    for (const pattern of uriPatterns.slice(0, 250)) {
+      const prefix = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern
+      rows.push(...(stmt.all(pattern, pattern.endsWith('*') ? 1 : 0, prefix + (pattern.endsWith('*') ? '%' : ''), normalizedLimit) as Array<Record<string, unknown>>))
+    }
   }
+  return rows.slice(0, normalizedLimit).map((row) => ({
+    src: row.src,
+    uri: row.uri,
+    ...(row.cid ? { cid: row.cid } : {}),
+    val: row.val,
+    ...(row.neg ? { neg: true } : {}),
+    cts: row.cts,
+    ...(row.exp ? { exp: row.exp } : {}),
+    ...(row.sig ? { sig: Buffer.from(row.sig as Buffer).toString('base64') } : {}),
+  }))
+}
 
-  const rows: Array<Record<string, unknown>> = []
-  const stmt = db.prepare(`
-    SELECT src, uri, cid, val, neg, cts, exp, sig
-    FROM labels
-    WHERE uri = ?
-    ORDER BY id ASC
-    LIMIT ?
-  `)
-  for (const uri of uriPatterns.slice(0, 250)) {
-    rows.push(...(stmt.all(uri, normalizedLimit) as Array<Record<string, unknown>>))
-  }
-  return rows.slice(0, normalizedLimit)
+function labelBytes(label: Record<string, unknown>) {
+  return cborEncode(noUndefinedVals({
+    ver: 1,
+    src: label.src,
+    uri: label.uri,
+    cid: label.cid,
+    val: label.val,
+    neg: label.neg === true ? true : undefined,
+    cts: label.cts,
+    exp: label.exp,
+  }))
+}
+
+async function createSignedLabel(input: { uri: string; cid?: string; val: string; neg?: boolean; exp?: string }) {
+  const label = noUndefinedVals({
+    ver: 1,
+    src: SERVICE_DID,
+    uri: input.uri,
+    cid: input.cid,
+    val: input.val,
+    neg: input.neg === true ? true : undefined,
+    cts: new Date().toISOString(),
+    exp: input.exp,
+  })
+  const sig = await signingKey.sign(labelBytes(label))
+  return { ...label, sig }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -154,13 +203,19 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://127.0.0.1:${PORT}`)
 
     if (req.method === 'GET' && url.pathname === '/health') {
-      return json(res, 200, { ok: true, service: SERVICE_DID, labeler: true })
+      return json(res, 200, { ok: true, service: SERVICE_DID, labeler: true, labelKey: labelPublicKeyMultibase })
     }
 
     if (req.method === 'GET' && url.pathname === '/.well-known/did.json') {
       const doc = {
-        '@context': ['https://www.w3.org/ns/did/v1'],
+        '@context': ['https://www.w3.org/ns/did/v1', 'https://w3id.org/security/multikey/v1'],
         id: SERVICE_DID,
+        verificationMethod: [{
+          id: `${SERVICE_DID}#atproto_label`,
+          type: 'Multikey',
+          controller: SERVICE_DID,
+          publicKeyMultibase: labelPublicKeyMultibase,
+        }],
         service: [{
           id: `${SERVICE_DID}${LABELER_SERVICE}`,
           type: LABELER_SERVICE_TYPE,
@@ -190,6 +245,29 @@ const server = http.createServer(async (req, res) => {
       const uriPatterns = url.searchParams.getAll('uriPatterns')
       const limit = Number(url.searchParams.get('limit') || 50)
       return json(res, 200, { labels: readLabels(uriPatterns, limit) })
+    }
+
+    if (req.method === 'POST' && url.pathname === '/labels') {
+      if (!authorizedApi(req)) return json(res, 401, { error: 'Unauthorized' })
+      const input = await body(req)
+      if (typeof input?.uri !== 'string' || typeof input?.val !== 'string') {
+        return json(res, 400, { error: 'InvalidRequest', message: 'uri and val are required' })
+      }
+      const label = await createSignedLabel({
+        uri: input.uri,
+        cid: typeof input.cid === 'string' ? input.cid : undefined,
+        val: input.val.slice(0, 128),
+        neg: input.neg === true,
+        exp: typeof input.exp === 'string' ? input.exp : undefined,
+      })
+      db.prepare(`
+        INSERT INTO labels(src, uri, cid, val, neg, cts, exp, sig, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        label.src, label.uri, label.cid ?? null, label.val, label.neg === true ? 1 : 0,
+        label.cts, label.exp ?? null, Buffer.from(label.sig), label.cts,
+      )
+      return json(res, 200, { label: { ...label, sig: Buffer.from(label.sig).toString('base64') } })
     }
 
     if (req.method === 'POST' && url.pathname === `/xrpc/${REPORT_LXM}`) {
