@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { isValidSession, sessionCookie } from '@/lib/auth'
 import { ReportActions } from './ReportActions'
+import { ContentActions } from './ContentActions'
 
 type Report = { id: string; reason?: string; reasonType?: string; subject?: { uri?: string; cid?: string; did?: string }; createdAt?: string; reportedBy?: string; status?: string }
 
@@ -50,7 +51,7 @@ export default async function ReportsPage() {
                 <div className="meta">{r.subject?.uri || r.subject?.did || 'Sujet inconnu'} {r.createdAt ? `• ${new Date(r.createdAt).toLocaleString('fr-BE')}` : ''}</div>
                 {r.reportedBy && <div className="meta">Signalé par : {r.reportedBy}</div>}
               </div>
-              <ReportActions id={String(r.id)} status={r.status} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}><ReportActions id={String(r.id)} status={r.status} /><ContentActions uri={r.subject?.uri} did={r.subject?.did} /></div>
             </article>
           ))}
         </section>
