@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { isValidSession, sessionCookie } from '@/lib/auth'
 import { pdsRequest } from '@/lib/pds'
+import { AccountActions } from './AccountActions'
 
 type Account = {
   did: string
