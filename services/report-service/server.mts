@@ -194,8 +194,8 @@ async function createSignedLabel(input: { uri: string; cid?: string; val: string
     cts: new Date().toISOString(),
     exp: input.exp,
   })
-  const sig = await signingKey.sign(labelBytes(label))
-  return { ...label, sig }
+  const signed = await signingKey.sign(labelBytes(label))
+  return { ...label, sig: signed.sig }
 }
 
 const server = http.createServer(async (req, res) => {
