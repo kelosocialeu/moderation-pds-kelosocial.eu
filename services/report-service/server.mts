@@ -144,7 +144,7 @@ function readLabels(uriPatterns: string[], limit: number) {
       FROM labels
       ORDER BY id ASC
       LIMIT ?
-    `).all(normalizedLimit) as Array<Record<string, unknown>>)
+    `).all(normalizedLimit) as Array<Record<string, unknown>>))
   } else {
     const stmt = db.prepare(`
       SELECT src, uri, cid, val, neg, cts, exp, sig
