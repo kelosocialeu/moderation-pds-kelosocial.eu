@@ -35,7 +35,7 @@ async function getAccounts(): Promise<Account[]> {
     )
 
     return results
-      .filter((result): result is PromiseFulfilledResult<Account | null> => result.status === 'fulfilled')
+      .filter((result) => result.status === 'fulfilled')
       .map((result) => result.value)
       .filter((account): account is Account => account !== null)
   } catch {
