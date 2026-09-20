@@ -184,7 +184,7 @@ function labelBytes(label: Record<string, unknown>) {
 }
 
 async function createSignedLabel(input: { uri: string; cid?: string; val: string; neg?: boolean; exp?: string }) {
-  const label = noUndefinedVals({
+  const label: Record<string, unknown> = noUndefinedVals({
     ver: 1,
     src: SERVICE_DID,
     uri: input.uri,
@@ -194,8 +194,8 @@ async function createSignedLabel(input: { uri: string; cid?: string; val: string
     cts: new Date().toISOString(),
     exp: input.exp,
   })
-  const signed = await signingKey.sign(labelBytes(label))
-  return { ...label, sig: signed.sig }
+  const sig = await signingKey.sign(labelBytes(label))
+  return { ...label, sig }
 }
 
 const server = http.createServer(async (req, res) => {
