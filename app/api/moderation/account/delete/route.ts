@@ -20,11 +20,22 @@ export async function POST(request: Request) {
     let accountInfo: { handle?: string; email?: string } = {}
     try {
       const info = await pdsRequest('/xrpc/com.atproto.admin.getAccountInfo?did=' + encodeURIComponent(body.did))
-      if (info.response.ok && info.data && typeof info.data === 'object') {
-        accountInfo = info.data as { handle?: string; email?: string }
+      if (!info.response.ok || !info.data || typeof info.data !== 'object') {
+        console.error('[Kelo Moderation] getAccountInfo failed before deletion:', info.response.status, info.data)
+        return NextResponse.json({ error: 'Impossible de vérifier le compte et son adresse e-mail auprès du PDS. Suppression annulée.' }, { status: 502 })
       }
+      accountInfo = info.data as { handle?: string; email?: string }
     } catch (error) {
       console.error('[Kelo Moderation] Unable to retrieve account contact before deletion:', error instanceof Error ? error.message : 'unknown error')
+      return NextResponse.json({ error: 'Impossible de joindre le PDS pour vérifier le compte. Suppression annulée.' }, { status: 503 })
+    }
+
+    // Deletion is irreversible: do not proceed when the notification cannot even be configured.
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json({ error: 'Suppression annulée : RESEND_API_KEY doit être configurée pour garantir la notification.' }, { status: 503 })
+    }
+    if (!accountInfo.email?.trim()) {
+      return NextResponse.json({ error: 'Suppression annulée : aucune adresse e-mail n’est enregistrée pour ce compte.' }, { status: 409 })
     }
 
     const result = await pdsRequest('/xrpc/com.atproto.admin.deleteAccount', { did: body.did })
