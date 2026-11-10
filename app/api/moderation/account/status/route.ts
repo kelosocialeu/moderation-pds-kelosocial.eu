@@ -36,7 +36,19 @@ export async function POST(request: Request) {
       deactivated: { applied: body.action === 'suspend' },
     })
     if (!result.response.ok) {
+      console.error('[Kelo Moderation] updateSubjectStatus rejected:', result.response.status, result.data)
       return NextResponse.json({ error: 'Le PDS a refusé cette opération.', details: result.data }, { status: result.response.status })
+    }
+
+    // Verify the effective status on the PDS instead of trusting only the write response.
+    const verification = await pdsRequest('/xrpc/com.atproto.admin.getSubjectStatus?did=' + encodeURIComponent(body.did))
+    if (!verification.response.ok || !verification.data || typeof verification.data !== 'object') {
+      return NextResponse.json({ error: 'Le PDS a accepté la demande, mais son statut ne peut pas être vérifié. Actualisez la liste avant toute nouvelle action.' }, { status: 502 })
+    }
+    const verified = verification.data as { deactivated?: { applied?: boolean } }
+    const expectedDeactivated = body.action === 'suspend'
+    if (verified.deactivated?.applied !== expectedDeactivated) {
+      return NextResponse.json({ error: 'Le statut renvoyé par le PDS ne correspond pas à l’action demandée. Aucune confirmation ne peut être donnée.' }, { status: 502 })
     }
 
     if (body.action === 'suspend') {
