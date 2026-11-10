@@ -1,4 +1,5 @@
 import 'server-only'
+import { randomUUID } from 'node:crypto'
 
 type ModerationEmailAction = 'suspended' | 'deleted'
 
@@ -53,32 +54,42 @@ export async function sendAccountModerationEmail(input: {
     `Notification automatique liée à une action de ${actionLabel}.`,
   ].join('\n')
 
-  try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        from,
-        to: [to],
-        subject,
-        html,
-        text,
-        ...(replyTo ? { reply_to: replyTo } : {}),
-      }),
-      cache: 'no-store',
-    })
-    if (!response.ok) {
-      console.error('[Kelo Moderation] Resend rejected an account notification:', response.status)
-      return { sent: false, reason: 'provider_error' }
+  const idempotencyKey = randomUUID()
+  const payload = JSON.stringify({
+    from,
+    to: [to],
+    subject,
+    html,
+    text,
+    ...(replyTo ? { reply_to: replyTo } : {}),
+  })
+
+  // Retry transient Resend failures with one idempotency key to avoid duplicate messages.
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          'content-type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: payload,
+        cache: 'no-store',
+      })
+      if (response.ok) return { sent: true }
+      const providerMessage = await response.text().catch(() => '')
+      console.error('[Kelo Moderation] Resend rejected an account notification:', response.status, providerMessage.slice(0, 500))
+      if (response.status < 500 && response.status !== 429) {
+        return { sent: false, reason: 'provider_error' }
+      }
+    } catch (error) {
+      console.error('[Kelo Moderation] Resend request failed:', error instanceof Error ? error.message : 'unknown error')
     }
-    return { sent: true }
-  } catch (error) {
-    console.error('[Kelo Moderation] Resend request failed:', error instanceof Error ? error.message : 'unknown error')
-    return { sent: false, reason: 'provider_error' }
+
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 500))
   }
+  return { sent: false, reason: 'provider_error' }
 }
 
 export function notificationMessage(reason?: string) {
