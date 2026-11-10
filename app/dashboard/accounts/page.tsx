@@ -8,29 +8,59 @@ type Account = { did: string; handle?: string; email?: string; indexedAt?: strin
 
 async function getAccounts(): Promise<Account[]> {
   try {
-    const repos = await pdsRequest('/xrpc/com.atproto.sync.listRepos?limit=100')
-    if (!repos.response.ok || !repos.data || typeof repos.data !== 'object' || !('repos' in repos.data)) return []
-    const list = (repos.data as { repos?: Array<{ did?: string }> }).repos ?? []
-    const dids = list.map((r) => r.did).filter((did): did is string => Boolean(did))
+    const collected: Array<{ did: string; handle?: string; email?: string; indexedAt?: string; deactivatedAt?: string }> = []
+    let cursor: string | undefined
+    let pages = 0
+
+    // Use the administrative account index, not listRepos: it includes accounts
+    // that are deactivated and supports cursor pagination.
+    do {
+      const query = new URLSearchParams({ limit: '100' })
+      if (cursor) query.set('cursor', cursor)
+      const result = await pdsRequest(`/xrpc/com.atproto.admin.searchAccounts?${query.toString()}`)
+      if (!result.response.ok || !result.data || typeof result.data !== 'object') {
+        throw new Error('PDS account search failed')
+      }
+      const payload = result.data as { accounts?: Array<{ did?: string; handle?: string; email?: string; indexedAt?: string; deactivatedAt?: string }>; cursor?: string }
+      const batch = payload.accounts ?? []
+      collected.push(...batch.filter((account): account is typeof account & { did: string } => typeof account.did === 'string'))
+      cursor = payload.cursor
+      pages += 1
+    } while (cursor && pages < 100)
+
     const accounts: Account[] = []
-    for (let i = 0; i < dids.length; i += 5) {
-      const batch = await Promise.all(dids.slice(i, i + 5).map(async (did): Promise<Account | null> => {
+    for (let i = 0; i < collected.length; i += 10) {
+      const batch = await Promise.all(collected.slice(i, i + 10).map(async (account): Promise<Account> => {
         try {
-          const [info, status] = await Promise.all([
-            pdsRequest(`/xrpc/com.atproto.admin.getAccountInfo?did=${encodeURIComponent(did)}`),
-            pdsRequest(`/xrpc/com.atproto.admin.getSubjectStatus?did=${encodeURIComponent(did)}`),
-          ])
-          if (!info.response.ok || !info.data || typeof info.data !== 'object') return null
-          const account = info.data as { did?: string; handle?: string; email?: string; indexedAt?: string }
-          const state = status.data && typeof status.data === 'object' ? status.data as { deactivated?: { applied?: boolean }; takedown?: { applied?: boolean } } : {}
-          if (!account.did) return null
-          return { did: account.did, handle: account.handle, email: account.email, indexedAt: account.indexedAt, deactivated: Boolean(state.deactivated?.applied), takedown: Boolean(state.takedown?.applied) }
-        } catch { return null }
+          const status = await pdsRequest(`/xrpc/com.atproto.admin.getSubjectStatus?did=${encodeURIComponent(account.did)}`)
+          const state = status.data && typeof status.data === 'object'
+            ? status.data as { deactivated?: { applied?: boolean }; takedown?: { applied?: boolean } }
+            : {}
+          return {
+            did: account.did,
+            handle: account.handle,
+            email: account.email,
+            indexedAt: account.indexedAt,
+            deactivated: Boolean(account.deactivatedAt) || Boolean(state.deactivated?.applied),
+            takedown: Boolean(state.takedown?.applied),
+          }
+        } catch {
+          return {
+            did: account.did,
+            handle: account.handle,
+            email: account.email,
+            indexedAt: account.indexedAt,
+            deactivated: Boolean(account.deactivatedAt),
+            takedown: false,
+          }
+        }
       }))
-      accounts.push(...batch.filter((item): item is Account => item !== null))
+      accounts.push(...batch)
     }
     return accounts
-  } catch { return [] }
+  } catch {
+    return []
+  }
 }
 
 export default async function AccountsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
@@ -40,6 +70,9 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
   const query = (params.q || '').trim().toLowerCase()
   const allAccounts = await getAccounts()
   const accounts = query ? allAccounts.filter((a) => a.did.toLowerCase().includes(query) || (a.handle || '').toLowerCase().includes(query)) : allAccounts
+  const takedownCount = allAccounts.filter((a) => a.takedown).length
+  const deactivatedCount = allAccounts.filter((a) => a.deactivated && !a.takedown).length
+  const activeCount = allAccounts.filter((a) => !a.deactivated && !a.takedown).length
 
   return (
     <main className="shell">
@@ -51,9 +84,15 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
         </nav>
       </aside>
       <section className="content">
-        <div className="top"><div><div className="eyebrow">Kelo Social • Modération</div><h1 className="title">Comptes</h1><p className="subtitle">Comptes du PDS Kelo Social, états administratifs et actions de modération.</p></div><form action="/api/auth/logout" method="post"><button className="btn">Se déconnecter</button></form></div>
+        <div className="top"><div><div className="eyebrow">Kelo Social • Modération</div><h1 className="title">Comptes</h1><p className="subtitle">Tous les comptes du PDS, y compris les comptes désactivés, avec pagination administrative AT Protocol.</p></div><form action="/api/auth/logout" method="post"><button className="btn">Se déconnecter</button></form></div>
+        <div className="grid">
+          <div className="card"><div className="label">Total des comptes</div><div className="metric">{allAccounts.length}</div></div>
+          <div className="card"><div className="label">Actifs</div><div className="metric">{activeCount}</div></div>
+          <div className="card"><div className="label">Désactivés</div><div className="metric">{deactivatedCount}</div></div>
+          <div className="card"><div className="label">Retirés par modération</div><div className="metric">{takedownCount}</div></div>
+        </div>
         <section className="card queue">
-          <div className="eyebrow">PDS • did:web:pds.kelosocial.eu</div><h2>{accounts.length} compte{accounts.length > 1 ? 's' : ''}{query ? ' trouvé(s)' : ' affiché(s)'}</h2>
+          <div className="eyebrow">PDS • did:web:pds.kelosocial.eu</div><h2>{accounts.length} compte{accounts.length > 1 ? 's' : ''}{query ? ' trouvé(s)' : ' au total'}</h2>
           <form className="searchForm" action="/dashboard/accounts" method="get"><input name="q" type="search" defaultValue={params.q || ''} placeholder="Rechercher un handle ou un DID…" aria-label="Rechercher un compte"/><button className="btn primary" type="submit">Rechercher</button>{query && <a className="btn" href="/dashboard/accounts">Effacer</a>}</form>
           {accounts.length === 0 ? <p className="subtitle">Aucun compte trouvé, ou le PDS n’a pas répondu. Vérifiez la connexion et les droits administrateur.</p> : accounts.map((account) => (
             <article className="report" key={account.did}>
