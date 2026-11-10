@@ -10,6 +10,7 @@ const SUSPENSION_REASONS = [
   "Usurpation d’identité ou fraude",
   "Contenu illégal",
   "Manipulation de la plateforme ou faux comptes",
+  "Suspicion de bot ou d’automatisation abusive",
   "Violation répétée des règles de la communauté",
   "Autre motif"
 ]
