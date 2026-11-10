@@ -21,6 +21,7 @@ export async function sendAccountModerationEmail(input: {
   handle?: string
   did: string
   action: ModerationEmailAction
+  reason?: string
 }): Promise<{ sent: boolean; reason?: 'missing_recipient' | 'not_configured' | 'provider_error' }> {
   const to = input.to?.trim()
   if (!to) return { sent: false, reason: 'missing_recipient' }
@@ -45,6 +46,11 @@ export async function sendAccountModerationEmail(input: {
     ? 'Nous vous confirmons que votre compte Kelo Social a été supprimé du serveur. Ce compte ne peut plus être utilisé pour vous connecter.'
     : 'Après examen, l’équipe de modération Kelo a suspendu votre compte. Pendant cette suspension, vous ne pouvez plus utiliser ce compte pour accéder à Kelo Social.'
   const title = isDeleted ? 'Suppression du compte' : 'Votre compte a été suspendu'
+  const reasonHtml = !isDeleted && input.reason ? `
+          <div style="margin-top:18px;padding:16px 18px;background:#fff8ed;border:1px solid #f4dfbd;border-radius:10px">
+            <p style="margin:0 0 6px;font-size:11px;line-height:16px;color:#94621c;font-weight:700;letter-spacing:.7px;text-transform:uppercase">Motif de la suspension</p>
+            <p style="margin:0;font-size:14px;line-height:22px;color:#493719">${escapeHtml(input.reason)}</p>
+          </div>` : ''
   const intro = isDeleted
     ? 'Cette notification confirme la prise en compte de la suppression de votre compte.'
     : 'Nous vous informons d’une décision prise par notre équipe de modération concernant votre compte.'
@@ -80,6 +86,7 @@ export async function sendAccountModerationEmail(input: {
           <h1 style="margin:0 0 12px;font-size:25px;line-height:32px;color:#17213a">${title}</h1>
           <p style="margin:0 0 12px;font-size:14px;line-height:23px;color:#526078">${intro}</p>
           <p style="margin:0;font-size:14px;line-height:23px;color:#27334a">${message}</p>
+          ${reasonHtml}
         </td></tr>
         <tr><td style="padding:8px 32px 26px">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f8f9fc;border:1px solid #e9edf4;border-radius:10px">
@@ -109,6 +116,7 @@ export async function sendAccountModerationEmail(input: {
     title,
     intro,
     message,
+    ...(!isDeleted && input.reason ? ['', 'Motif de la suspension :', input.reason] : []),
     '',
     `Identifiant du compte : ${input.did}`,
     ...(!isDeleted ? ['', 'Vous souhaitez contester cette décision ?', 'Vous pouvez transmettre une demande de contestation via ce formulaire :', APPEAL_URL] : []),
