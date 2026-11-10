@@ -15,7 +15,7 @@ type Account = {
   statusKnown: boolean
   statusCode?: string
 }
-type AccountLoad = { accounts: Account[]; error?: string; source: 'repo-index' | 'none' }
+type AccountLoad = { accounts: Account[]; error?: string; source: 'repo-index' | 'none'; adminApiAvailable: boolean }
 
 function validHandle(value?: string) {
   if (!value || value === 'handle.invalid' || value === 'invalid.invalid') return undefined
@@ -136,11 +136,11 @@ async function getAccounts(): Promise<AccountLoad> {
       }))
       accounts.push(...batch)
     }
-    return { accounts, source: 'repo-index' }
+    return { accounts, source: 'repo-index', adminApiAvailable: detailsByDid.size > 0 || uniqueRepos.length === 0 }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erreur inconnue lors de la lecture du PDS'
     console.error('[Kelo Moderation] Impossible de charger les comptes:', message)
-    return { accounts: [], source: 'none', error: message }
+    return { accounts: [], source: 'none', error: message, adminApiAvailable: false }
   }
 }
 
@@ -187,6 +187,7 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
         <section className="card queue">
           <div className="eyebrow">PDS • did:web:pds.kelosocial.eu • Index public des dépôts</div><h2>{accounts.length} compte{accounts.length > 1 ? 's' : ''}{query ? ' trouvé(s)' : ' au total'}</h2>
           <form className="searchForm" action="/dashboard/accounts" method="get"><input name="q" type="search" defaultValue={params.q || ''} placeholder="Rechercher un handle ou un DID…" aria-label="Rechercher un compte"/><button className="btn primary" type="submit">Rechercher</button>{query && <a className="btn" href="/dashboard/accounts">Effacer</a>}</form>
+          {!loaded.error && allAccounts.length > 0 && !loaded.adminApiAvailable && <p className="error">La liste et les statuts sont lus depuis le PDS, mais son API administrateur refuse la connexion. Les actions suspendre, réactiver et supprimer ne fonctionneront pas tant que PDS_ADMIN_PASSWORD ne sera pas corrigé dans les variables d’environnement de Vercel.</p>}
           {loaded.error && <p className="error">Impossible de récupérer les comptes : {loaded.error}. Vérifiez que PDS_URL pointe vers https://pds.kelosocial.eu et que le PDS répond à com.atproto.sync.listRepos.</p>}
           {accounts.length === 0 && !loaded.error ? <p className="subtitle">Le PDS a répondu correctement, mais ne retourne aucun dépôt de compte.</p> : accounts.map((account) => {
             const canManage = account.statusKnown && ['active', 'suspended', 'deactivated'].includes(account.statusCode || '')
