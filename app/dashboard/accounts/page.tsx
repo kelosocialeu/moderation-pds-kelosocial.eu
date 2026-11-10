@@ -52,23 +52,36 @@ async function handleFromDidDocument(did: string): Promise<string | undefined> {
   return undefined
 }
 
-async function accountDetails(did: string) {
-  try {
-    const result = await pdsRequest('/xrpc/com.atproto.admin.getAccountInfo?did=' + encodeURIComponent(did))
-    if (result.response.ok && result.data && typeof result.data === 'object') {
-      const info = result.data as { handle?: string; email?: string; indexedAt?: string; deactivatedAt?: string }
-      return {
-        handle: validHandle(info.handle),
-        email: info.email,
-        indexedAt: info.indexedAt,
-        deactivatedAt: info.deactivatedAt,
+type AccountDetails = { handle?: string; email?: string; indexedAt?: string; deactivatedAt?: string }
+
+async function accountDetailsFor(dids: string[]): Promise<Map<string, AccountDetails>> {
+  const details = new Map<string, AccountDetails>()
+  for (let i = 0; i < dids.length; i += 100) {
+    const query = new URLSearchParams()
+    for (const did of dids.slice(i, i + 100)) query.append('dids', did)
+    try {
+      const result = await pdsRequest('/xrpc/com.atproto.admin.getAccountInfos?' + query.toString())
+      if (!result.response.ok || !result.data || typeof result.data !== 'object') {
+        console.warn('[Kelo Moderation] getAccountInfos unavailable:', result.response.status, result.data)
+        continue
       }
+      const payload = result.data as { infos?: Array<AccountDetails & { did?: string }> }
+      if (!Array.isArray(payload.infos)) continue
+      for (const info of payload.infos) {
+        if (typeof info.did === 'string') {
+          details.set(info.did, {
+            handle: validHandle(info.handle),
+            email: info.email,
+            indexedAt: info.indexedAt,
+            deactivatedAt: info.deactivatedAt,
+          })
+        }
+      }
+    } catch (error) {
+      console.warn('[Kelo Moderation] getAccountInfos failed:', error instanceof Error ? error.message : 'unknown error')
     }
-    console.warn('[Kelo Moderation] getAccountInfo rejected:', did, result.response.status, result.data)
-  } catch (error) {
-    console.warn('[Kelo Moderation] getAccountInfo failed:', did, error instanceof Error ? error.message : 'unknown error')
   }
-  return {}
+  return details
 }
 
 function statusFromRepo(repo: RepoEntry, deactivatedAt?: string): Pick<Account, 'deactivated' | 'takedown' | 'statusKnown' | 'statusCode'> {
@@ -106,14 +119,12 @@ async function getAccounts(): Promise<AccountLoad> {
     if (cursor) throw new Error('La pagination du PDS dépasse 100 pages : chargement interrompu pour éviter une liste incomplète')
     const uniqueRepos = Array.from(new Map(repos.map((repo) => [repo.did, repo])).values())
 
+    const detailsByDid = await accountDetailsFor(uniqueRepos.map((repo) => repo.did))
     const accounts: Account[] = []
-    for (let i = 0; i < uniqueRepos.length; i += 12) {
-      const batch = await Promise.all(uniqueRepos.slice(i, i + 12).map(async (repo): Promise<Account> => {
-        const [details, documentHandle] = await Promise.all([
-          accountDetails(repo.did),
-          handleFromDidDocument(repo.did),
-        ])
-        const handle = details.handle || documentHandle
+    for (let i = 0; i < uniqueRepos.length; i += 20) {
+      const batch = await Promise.all(uniqueRepos.slice(i, i + 20).map(async (repo): Promise<Account> => {
+        const details = detailsByDid.get(repo.did) || {}
+        const handle = details.handle || await handleFromDidDocument(repo.did)
         const status = statusFromRepo(repo, details.deactivatedAt)
         return {
           did: repo.did,
