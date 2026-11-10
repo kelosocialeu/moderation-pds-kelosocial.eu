@@ -4,6 +4,18 @@ import { isValidSession, sessionCookie } from '@/lib/auth'
 import { pdsPublicRequest, pdsRequest } from '@/lib/pds'
 import { sendAccountModerationEmail, notificationMessage } from '@/lib/moderation-email'
 
+const SUSPENSION_REASONS = [
+  "Spam ou publications répétitives",
+  "Harcèlement, intimidation ou menaces",
+  "Discours haineux ou discrimination",
+  "Contenu violent ou dangereux",
+  "Usurpation d’identité ou fraude",
+  "Contenu illégal",
+  "Manipulation de la plateforme ou faux comptes",
+  "Violation répétée des règles de la communauté",
+  "Autre motif"
+]
+
 export async function POST(request: Request) {
   const store = await cookies()
   if (!isValidSession(store.get(sessionCookie.name)?.value)) {
@@ -17,6 +29,9 @@ export async function POST(request: Request) {
     }
     if (body.action !== 'suspend' && body.action !== 'reactivate') {
       return NextResponse.json({ error: 'Unsupported account action' }, { status: 400 })
+    }
+    if (body.action === 'suspend' && (typeof body.reason !== 'string' || !SUSPENSION_REASONS.includes(body.reason))) {
+      return NextResponse.json({ error: 'Sélectionnez un motif de suspension valide.' }, { status: 400 })
     }
 
     let accountInfo: { handle?: string; email?: string } = {}
@@ -58,12 +73,13 @@ export async function POST(request: Request) {
         handle: accountInfo.handle,
         did: body.did,
         action: 'suspended',
+        reason: body.reason,
       })
       return NextResponse.json({
         success: true,
         action: 'suspended',
         notification,
-        message: notification.sent ? 'Compte suspendu et e-mail envoyé.' : notificationMessage(notification.reason),
+        message: notification.sent ? 'Compte suspendu et e-mail envoyé avec le motif.' : notificationMessage(notification.reason),
       })
     }
 
