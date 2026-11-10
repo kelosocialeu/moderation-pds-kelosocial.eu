@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { isValidSession, sessionCookie } from '@/lib/auth'
-import { pdsRequest } from '@/lib/pds'
+import { pdsPublicRequest, pdsRequest } from '@/lib/pds'
 import { sendAccountModerationEmail, notificationMessage } from '@/lib/moderation-email'
 
 export async function POST(request: Request) {
@@ -41,16 +41,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error, details: result.data }, { status: result.response.status })
     }
 
-    // Verify the effective status on the PDS instead of trusting only the write response.
-    const verification = await pdsRequest('/xrpc/com.atproto.admin.getSubjectStatus?did=' + encodeURIComponent(body.did))
+    // Verify the effective status using the public repository status endpoint.
+    const verification = await pdsPublicRequest('/xrpc/com.atproto.sync.getRepoStatus?did=' + encodeURIComponent(body.did))
     if (!verification.response.ok || !verification.data || typeof verification.data !== 'object') {
-      const error = verification.response.status === 401 ? 'Le PDS refuse l’authentification administrateur lors de la vérification. Vérifiez PDS_ADMIN_PASSWORD dans Vercel.' : verification.response.status === 403 ? 'Le compte administrateur ne peut pas lire le statut de ce compte.' : 'Le PDS a accepté la demande, mais son statut ne peut pas être vérifié. Actualisez la liste avant toute nouvelle action.'
-      return NextResponse.json({ error }, { status: 502 })
+      return NextResponse.json({ error: 'Le PDS a accepté la demande, mais son état de dépôt ne peut pas être vérifié. Actualisez la liste avant toute nouvelle action.' }, { status: 502 })
     }
-    const verified = verification.data as { deactivated?: { applied?: boolean } }
-    const expectedDeactivated = body.action === 'suspend'
-    if (verified.deactivated?.applied !== expectedDeactivated) {
-      return NextResponse.json({ error: 'Le statut renvoyé par le PDS ne correspond pas à l’action demandée. Aucune confirmation ne peut être donnée.' }, { status: 502 })
+    const verified = verification.data as { active?: boolean; status?: string }
+    const expectedActive = body.action === 'reactivate'
+    if (verified.active !== expectedActive) {
+      return NextResponse.json({ error: 'Le statut du dépôt renvoyé par le PDS ne correspond pas à l’action demandée. Aucune confirmation ne peut être donnée.' }, { status: 502 })
     }
 
     if (body.action === 'suspend') {
