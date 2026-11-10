@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 
-export function ContentActions({ uri, did }: { uri?: string; did?: string }) {
+export function ContentActions({ uri, cid, did }: { uri?: string; cid?: string; did?: string }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -28,7 +28,7 @@ export function ContentActions({ uri, did }: { uri?: string; did?: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-        {uri && <button className="btn" disabled={busy} onClick={() => act('/api/moderation/content/status', { uri, action: 'takedown' }, 'Retirer ce contenu du PDS ?')}>Retirer le contenu</button>}
+        {uri && cid && <button className="btn" disabled={busy} onClick={() => act('/api/moderation/content/status', { uri, cid, action: 'takedown' }, 'Retirer ce contenu du PDS ?')}>Retirer le contenu</button>}
         {did && <button className="btn" disabled={busy} onClick={() => act('/api/moderation/account/status', { did, action: 'suspend' }, 'Suspendre le compte signalé ?')}>Suspendre le compte</button>}
       </div>
       {message && <span className="error">{message}</span>}
