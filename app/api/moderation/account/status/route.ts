@@ -70,6 +70,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, action: 'reactivated', message: 'Compte réactivé.' })
   } catch (error) {
     console.error('[Kelo Moderation] Account status action failed:', error instanceof Error ? error.message : 'unknown error')
-    return NextResponse.json({ error: 'Impossible de contacter le PDS. Vérifiez les identifiants serveur.' }, { status: 503 })
+    const message = error instanceof Error && error.message.includes('PDS_ADMIN_PASSWORD') ? 'PDS_ADMIN_PASSWORD est absent des variables d’environnement de Vercel.' : 'Impossible de contacter le PDS. Vérifiez PDS_URL et les identifiants administrateur.'
+    return NextResponse.json({ error: message }, { status: 503 })
   }
 }
