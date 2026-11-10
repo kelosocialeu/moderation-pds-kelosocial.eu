@@ -24,10 +24,10 @@ export async function sendAccountModerationEmail(input: {
   if (!to) return { sent: false, reason: 'missing_recipient' }
 
   const apiKey = process.env.RESEND_API_KEY
-  const from = process.env.RESEND_FROM_EMAIL
-  const replyTo = process.env.RESEND_REPLY_TO
+  const from = process.env.RESEND_FROM_EMAIL || 'Kelo Social <support@kelosocial.eu>'
+  const replyTo = process.env.RESEND_REPLY_TO || 'support@kelosocial.eu'
 
-  if (!apiKey || !from) {
+  if (!apiKey) {
     console.error('[Kelo Moderation] Resend is not configured (RESEND_API_KEY / RESEND_FROM_EMAIL).')
     return { sent: false, reason: 'not_configured' }
   }
