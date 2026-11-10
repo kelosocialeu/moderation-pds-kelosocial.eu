@@ -155,17 +155,29 @@ function statusLabel(account: Account) {
   return 'Actif'
 }
 
-export default async function AccountsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function AccountsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string }> }) {
   const store = await cookies()
   if (!isValidSession(store.get(sessionCookie.name)?.value)) redirect('/')
   const params = await searchParams
   const query = (params.q || '').trim().toLowerCase()
+  const selectedStatus = ['active', 'suspended', 'deactivated', 'takedown', 'unknown', 'deleted'].includes(params.status || '') ? params.status! : 'all'
   const loaded = await getAccounts()
   const allAccounts = loaded.accounts
-  const accounts = query ? allAccounts.filter((account) => account.did.toLowerCase().includes(query) || (account.handle || '').toLowerCase().includes(query)) : allAccounts
+  const searchedAccounts = query ? allAccounts.filter((account) => account.did.toLowerCase().includes(query) || (account.handle || '').toLowerCase().includes(query)) : allAccounts
+  const accounts = searchedAccounts.filter((account) => {
+    if (selectedStatus === 'active') return account.statusKnown && account.statusCode === 'active'
+    if (selectedStatus === 'suspended') return account.statusKnown && account.statusCode === 'suspended'
+    if (selectedStatus === 'deactivated') return account.statusKnown && account.deactivated && !account.takedown && account.statusCode !== 'suspended'
+    if (selectedStatus === 'takedown') return account.statusKnown && account.takedown
+    if (selectedStatus === 'unknown') return !account.statusKnown
+    return selectedStatus === 'all'
+  })
   const takedownCount = allAccounts.filter((account) => account.statusKnown && account.takedown).length
-  const deactivatedCount = allAccounts.filter((account) => account.statusKnown && account.deactivated && !account.takedown).length
+  const suspendedCount = allAccounts.filter((account) => account.statusKnown && account.statusCode === 'suspended').length
+  const deactivatedCount = allAccounts.filter((account) => account.statusKnown && account.deactivated && !account.takedown && account.statusCode !== 'suspended').length
   const activeCount = allAccounts.filter((account) => account.statusKnown && account.statusCode === 'active').length
+  const unknownCount = allAccounts.filter((account) => !account.statusKnown).length
+  const filterHref = (status: string) => `/dashboard/accounts${query ? `?q=${encodeURIComponent(query)}&` : '?'}${status === 'all' ? '' : `status=${status}`}`
 
   return (
     <main className="shell">
@@ -179,17 +191,20 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
       <section className="content">
         <div className="top"><div><div className="eyebrow">Kelo Social • Modération</div><h1 className="title">Comptes</h1><p className="subtitle">Comptes hébergés sur le PDS, identifiés par leur DID, leur handle et leur état de dépôt AT Protocol.</p></div><form action="/api/auth/logout" method="post"><button className="btn">Se déconnecter</button></form></div>
         <div className="grid">
-          <div className="card"><div className="label">Total des comptes</div><div className="metric">{loaded.error ? '—' : allAccounts.length}</div></div>
-          <div className="card"><div className="label">Actifs</div><div className="metric">{loaded.error ? '—' : activeCount}</div></div>
-          <div className="card"><div className="label">Désactivés / suspendus</div><div className="metric">{loaded.error ? '—' : deactivatedCount}</div></div>
-          <div className="card"><div className="label">Retirés par modération</div><div className="metric">{loaded.error ? '—' : takedownCount}</div></div>
+          <a className="card" href={filterHref('all')} style={{display:'block',color:'inherit',textDecoration:'none',outline:selectedStatus==='all'?'2px solid var(--blue)':undefined}}><div className="label">Tous les comptes</div><div className="metric">{loaded.error ? '—' : allAccounts.length}</div></a>
+          <a className="card" href={filterHref('active')} style={{display:'block',color:'inherit',textDecoration:'none',outline:selectedStatus==='active'?'2px solid var(--blue)':undefined}}><div className="label">Actifs</div><div className="metric">{loaded.error ? '—' : activeCount}</div></a>
+          <a className="card" href={filterHref('suspended')} style={{display:'block',color:'inherit',textDecoration:'none',outline:selectedStatus==='suspended'?'2px solid var(--blue)':undefined}}><div className="label">Suspendus</div><div className="metric">{loaded.error ? '—' : suspendedCount}</div></a>
+          <a className="card" href={filterHref('deactivated')} style={{display:'block',color:'inherit',textDecoration:'none',outline:selectedStatus==='deactivated'?'2px solid var(--blue)':undefined}}><div className="label">Désactivés</div><div className="metric">{loaded.error ? '—' : deactivatedCount}</div></a>
+          <a className="card" href={filterHref('takedown')} style={{display:'block',color:'inherit',textDecoration:'none',outline:selectedStatus==='takedown'?'2px solid var(--blue)':undefined}}><div className="label">Retirés par modération</div><div className="metric">{loaded.error ? '—' : takedownCount}</div></a>
+          <a className="card" href={filterHref('unknown')} style={{display:'block',color:'inherit',textDecoration:'none',outline:selectedStatus==='unknown'?'2px solid var(--blue)':undefined}}><div className="label">Statut à vérifier</div><div className="metric">{loaded.error ? '—' : unknownCount}</div></a>
+          <a className="card" href={filterHref('deleted')} style={{display:'block',color:'inherit',textDecoration:'none',outline:selectedStatus==='deleted'?'2px solid var(--blue)':undefined}}><div className="label">Supprimés (historique)</div><div className="metric">—</div></a>
         </div>
         <section className="card queue">
-          <div className="eyebrow">PDS • did:web:pds.kelosocial.eu • Index public des dépôts</div><h2>{accounts.length} compte{accounts.length > 1 ? 's' : ''}{query ? ' trouvé(s)' : ' au total'}</h2>
-          <form className="searchForm" action="/dashboard/accounts" method="get"><input name="q" type="search" defaultValue={params.q || ''} placeholder="Rechercher un handle ou un DID…" aria-label="Rechercher un compte"/><button className="btn primary" type="submit">Rechercher</button>{query && <a className="btn" href="/dashboard/accounts">Effacer</a>}</form>
+          <div className="eyebrow">PDS • did:web:pds.kelosocial.eu • Index public des dépôts</div><h2>{accounts.length} compte{accounts.length > 1 ? 's' : ''}{selectedStatus !== 'all' ? ` • ${({active:'Actifs',suspended:'Suspendus',deactivated:'Désactivés',takedown:'Retirés',unknown:'À vérifier',deleted:'Supprimés'} as Record<string,string>)[selectedStatus]}` : query ? ' trouvé(s)' : ' au total'}</h2>
+          <form className="searchForm" action="/dashboard/accounts" method="get"><input name="q" type="search" defaultValue={params.q || ''} placeholder="Rechercher un handle ou un DID…" aria-label="Rechercher un compte"/>{selectedStatus !== 'all' && <input type="hidden" name="status" value={selectedStatus}/>}<button className="btn primary" type="submit">Rechercher</button>{(query || selectedStatus !== 'all') && <a className="btn" href="/dashboard/accounts">Effacer</a>}</form>
           {!loaded.error && allAccounts.length > 0 && !loaded.adminApiAvailable && <p className="error">La liste et les statuts sont lus depuis le PDS, mais son API administrateur refuse la connexion. Les actions suspendre, réactiver et supprimer ne fonctionneront pas tant que PDS_ADMIN_PASSWORD ne sera pas corrigé dans les variables d’environnement de Vercel.</p>}
           {loaded.error && <p className="error">Impossible de récupérer les comptes : {loaded.error}. Vérifiez que PDS_URL pointe vers https://pds.kelosocial.eu et que le PDS répond à com.atproto.sync.listRepos.</p>}
-          {accounts.length === 0 && !loaded.error ? <p className="subtitle">Le PDS a répondu correctement, mais ne retourne aucun dépôt de compte.</p> : accounts.map((account) => {
+          {selectedStatus === 'deleted' ? <p className="subtitle">Les comptes supprimés ne sont plus présents dans l’index public du PDS. Pour afficher ici les comptes supprimés avec leur DID, leur handle et la date de suppression, il faut conserver un journal des suppressions dans un stockage persistant. Aucun historique de suppression n’est actuellement enregistré par cette application.</p> : accounts.length === 0 && !loaded.error ? <p className="subtitle">Aucun compte ne correspond à cette catégorie.</p> : accounts.map((account) => {
             const canManage = account.statusKnown && ['active', 'suspended', 'deactivated'].includes(account.statusCode || '')
             return (
               <article className="report" key={account.did}>
