@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
     // Deletion is irreversible: do not proceed when the notification cannot even be configured.
     if (!process.env.RESEND_API_KEY) {
-      return NextResponse.json({ error: 'Suppression annulée : RESEND_API_KEY doit être configurée pour garantir la notification.' }, { status: 503 })
+      return NextResponse.json({ error: 'Suppression annulée : RESEND_API_KEY doit être configurée pour pouvoir envoyer la notification.' }, { status: 503 })
     }
     if (!accountInfo.email?.trim()) {
       return NextResponse.json({ error: 'Suppression annulée : aucune adresse e-mail n’est enregistrée pour ce compte.' }, { status: 409 })
