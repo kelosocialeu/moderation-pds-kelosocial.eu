@@ -42,7 +42,8 @@ export async function POST(request: Request) {
 
     const result = await pdsRequest('/xrpc/com.atproto.admin.deleteAccount', { did: body.did })
     if (!result.response.ok) {
-      return NextResponse.json({ error: 'Le PDS a refusé la suppression du compte.', details: result.data }, { status: result.response.status })
+      const error = result.response.status === 401 ? 'Authentification administrateur refusée par le PDS. Vérifiez PDS_ADMIN_PASSWORD dans Vercel.' : result.response.status === 403 ? 'Le compte administrateur n’a pas les droits requis sur le PDS.' : 'Le PDS a refusé la suppression du compte.'
+      return NextResponse.json({ error, details: result.data }, { status: result.response.status })
     }
 
     const notification = await sendAccountModerationEmail({
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error('[Kelo Moderation] Account deletion failed:', error instanceof Error ? error.message : 'unknown error')
-    return NextResponse.json({ error: 'Impossible de contacter le PDS. Vérifiez les identifiants serveur.' }, { status: 503 })
+    const message = error instanceof Error && error.message.includes('PDS_ADMIN_PASSWORD') ? 'PDS_ADMIN_PASSWORD est absent des variables d’environnement de Vercel.' : 'Impossible de contacter le PDS. Vérifiez PDS_URL et les identifiants administrateur.'
+    return NextResponse.json({ error: message }, { status: 503 })
   }
 }
