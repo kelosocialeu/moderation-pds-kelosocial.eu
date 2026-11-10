@@ -3,6 +3,13 @@ import crypto from 'node:crypto'
 
 const COOKIE = 'kelo_mod_session'
 const MAX_AGE = 60 * 60 * 8
+const ALLOWED_HANDLES = new Set(['kelosocial.eu', 'moderation.kelosocial.eu'])
+
+export type AuthenticatedIdentity = {
+  did: string
+  handle: string
+  pdsUrl: string
+}
 
 function secret() {
   const value = process.env.SESSION_SECRET
@@ -10,42 +17,54 @@ function secret() {
   return value
 }
 
-export function verifyPassword(password: string) {
-  const direct = process.env.ADMIN_PASSWORD
-  if (direct) {
-    const a = Buffer.from(password)
-    const b = Buffer.from(direct)
-    return a.length === b.length && crypto.timingSafeEqual(a, b)
-  }
-
-  const expected = process.env.ADMIN_PASSWORD_HASH
-  if (!expected) throw new Error('ADMIN_PASSWORD or ADMIN_PASSWORD_HASH is missing')
-  const [salt, hash] = expected.split(':')
-  if (!salt || !hash) return false
-  const derived = crypto.scryptSync(password, salt, 64).toString('hex')
-  return crypto.timingSafeEqual(Buffer.from(derived, 'hex'), Buffer.from(hash, 'hex'))
-}
-
 function sign(payload: string) {
   return crypto.createHmac('sha256', secret()).update(payload).digest('base64url')
 }
 
-export function createSessionValue() {
-  const exp = Math.floor(Date.now() / 1000) + MAX_AGE
-  const nonce = crypto.randomBytes(24).toString('base64url')
-  const payload = `${exp}.${nonce}`
+function normalizePdsUrl(value: string) {
+  return new URL(value).origin.replace(/\/$/, '').toLowerCase()
+}
+
+export function createSessionValue(identity: AuthenticatedIdentity) {
+  const payload = Buffer.from(JSON.stringify({
+    ...identity,
+    handle: identity.handle.toLowerCase(),
+    pdsUrl: normalizePdsUrl(identity.pdsUrl),
+    exp: Math.floor(Date.now() / 1000) + MAX_AGE,
+    nonce: crypto.randomBytes(24).toString('base64url'),
+  })).toString('base64url')
   return `${payload}.${sign(payload)}`
 }
 
-export function isValidSession(value?: string) {
+export function isValidSession(value?: string): boolean {
   if (!value) return false
-  const [exp, nonce, signature] = value.split('.')
-  if (!exp || !nonce || !signature) return false
-  const payload = `${exp}.${nonce}`
+  const [payload, signature, extra] = value.split('.')
+  if (!payload || !signature || extra) return false
   const expected = sign(payload)
-  if (signature.length !== expected.length) return false
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return false
-  return Number(exp) > Math.floor(Date.now() / 1000)
+  const actualBuffer = Buffer.from(signature)
+  const expectedBuffer = Buffer.from(expected)
+  if (actualBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(actualBuffer, expectedBuffer)) return false
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Partial<AuthenticatedIdentity> & { exp?: number; nonce?: string }
+    const configuredPds = process.env.PDS_URL
+    if (!configuredPds || !data.did || !data.handle || !data.pdsUrl || !data.exp || !data.nonce) return false
+    if (!ALLOWED_HANDLES.has(data.handle.toLowerCase())) return false
+    if (normalizePdsUrl(data.pdsUrl) !== normalizePdsUrl(configuredPds)) return false
+    return data.exp > Math.floor(Date.now() / 1000)
+  } catch {
+    return false
+  }
+}
+
+export function getSessionIdentity(value?: string): AuthenticatedIdentity | null {
+  if (!isValidSession(value)) return null
+  try {
+    const [payload] = value!.split('.')
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as AuthenticatedIdentity
+    return { did: data.did, handle: data.handle, pdsUrl: data.pdsUrl }
+  } catch {
+    return null
+  }
 }
 
 export const sessionCookie = {
