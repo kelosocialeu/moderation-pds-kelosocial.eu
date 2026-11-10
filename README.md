@@ -49,13 +49,13 @@ RESEND_REPLY_TO=support@kelosocial.eu
 
 ## Notifications e-mail Resend
 
-Les notifications de suspension et de suppression utilisent l’API Resend. Dans les variables d’environnement **Production** de Vercel, configurer :
+Les notifications de suspension et de suppression utilisent l’API Resend. Dans les variables d’environnement **Production** de Vercel, ajouter obligatoirement :
 
-- `RESEND_API_KEY` : clé API Resend secrète ;
-- `RESEND_FROM_EMAIL` : expéditeur appartenant à un domaine vérifié dans Resend (ex. `Kelo Social <support@kelosocial.eu>`) ;
-- `RESEND_REPLY_TO` : adresse de réponse, facultative (ex. `support@kelosocial.eu`).
+- `RESEND_API_KEY` : clé API Resend secrète.
 
-Ne jamais ajouter la clé Resend au dépôt GitHub ni au code exécuté dans le navigateur. L’adresse e-mail du compte est récupérée auprès du PDS avant l’action irréversible. Si l’adresse est absente ou si Resend échoue, l’action de modération reste appliquée et le tableau de bord affiche que le message n’a pas été envoyé.
+L’expéditeur par défaut est `Kelo Social <support@kelosocial.eu>` et l’adresse de réponse `support@kelosocial.eu`. Le domaine `kelosocial.eu` doit être vérifié dans Resend et l’adresse d’expédition doit être autorisée. Les valeurs peuvent être remplacées facultativement avec `RESEND_FROM_EMAIL` et `RESEND_REPLY_TO`.
+
+Ne jamais ajouter la clé Resend au dépôt GitHub ni au code exécuté dans le navigateur. L’adresse e-mail du compte est récupérée auprès du PDS avant l’action irréversible. Si l’adresse est absente ou si Resend échoue après les tentatives automatiques, l’action de modération reste appliquée et le tableau de bord affiche que le mail n’a pas été envoyé.
 
 ## Variables du report service
 
