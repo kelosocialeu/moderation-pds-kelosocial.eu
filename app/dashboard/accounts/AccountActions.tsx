@@ -38,7 +38,7 @@ export function AccountActions({ did, deactivated, disabled = false }: { did: st
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         {deactivated
           ? <button className="btn" disabled={busy || disabled} onClick={() => request('/api/moderation/account/status', { did, action: 'reactivate' })}>Réactiver</button>
-          : <button className="btn" disabled={busy} onClick={() => request('/api/moderation/account/status', { did, action: 'suspend' })}>Suspendre</button>}
+          : <button className="btn" disabled={busy || disabled} onClick={() => request('/api/moderation/account/status', { did, action: 'suspend' })}>Suspendre</button>}
         <button className="btn" disabled={busy || disabled} onClick={deleteAccount}>Supprimer</button>
       </div>
       {message && <span role="status" style={{ color: success ? 'var(--ok)' : 'var(--danger)', fontSize: 12, textAlign: 'right' }}>{message}</span>}
