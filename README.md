@@ -4,22 +4,33 @@ Console privée de modération pour Kelo Social.
 
 ## Architecture
 
-Le dépôt contient désormais deux parties :
+Le dépôt contient deux parties :
 
-- **Next.js** : interface privée `mod.kelosocial.eu` ;
+- **Next.js** : interface privée de modération ;
 - **Kelo Report Service** : service AT Protocol séparé, prévu pour `reports.kelosocial.eu`.
 
 Le report service reçoit directement `com.atproto.moderation.createReport`, vérifie les JWT d'authentification inter-services AT Protocol, contrôle l'audience et le `lxm`, bloque les relectures grâce au `jti`, puis conserve les signalements dans SQLite.
 
-Cette architecture évite de dépendre de `mod.bsky.app` tout en conservant une interface Kelo personnalisée.
+## Connexion à Kelo Moderation
 
-AT Protocol utilise le mécanisme de proxy `atproto-proxy` : le PDS transmet au service cible un JWT signé à durée courte. Le service destinataire doit vérifier cette authentification. Voir la documentation officielle AT Protocol sur les signalements et l'authentification inter-services.
+La connexion utilise le mécanisme de mot de passe AT Protocol du PDS Kelo Social, sans OAuth et sans mot de passe administrateur indépendant.
+
+Seuls ces deux handles exacts sont autorisés :
+
+- `kelosocial.eu`
+- `moderation.kelosocial.eu`
+
+Le serveur résout le handle, vérifie le DID document et le service PDS associé, puis authentifie le mot de passe auprès de `com.atproto.server.createSession`. Si le PDS demande un facteur de vérification, le code reçu par e-mail peut être fourni dans le formulaire. Une session signée, limitée à huit heures, est ensuite conservée dans un cookie HttpOnly, Secure et SameSite=Strict.
+
+Les autres handles sont refusés. Les identités doivent être hébergées sur le PDS configuré dans `PDS_URL`.
 
 ## Sécurité intégrée
 
 - aucune inscription publique ;
-- mot de passe administrateur côté serveur ;
-- session signée ;
+- authentification AT Protocol via le PDS Kelo ;
+- liste blanche stricte de deux handles ;
+- vérification du DID et du service PDS avant connexion ;
+- session signée côté serveur ;
 - cookie HttpOnly, Secure et SameSite=Strict ;
 - secrets jamais exposés au navigateur ;
 - limitation basique des tentatives de connexion ;
@@ -31,11 +42,10 @@ AT Protocol utilise le mécanisme de proxy `atproto-proxy` : le PDS transmet au 
 
 ## Variables d'environnement du site
 
-Copier les valeurs dans les variables secrètes de Vercel :
+Configurer dans Vercel :
 
 ```env
 SESSION_SECRET=replace-with-at-least-32-random-characters
-ADMIN_PASSWORD_HASH=salt:64-byte-scrypt-hash-in-hex
 
 MODERATION_API_URL=https://reports.kelosocial.eu
 MODERATION_API_TOKEN=replace-with-a-long-random-server-token
@@ -46,6 +56,8 @@ RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxxx
 RESEND_FROM_EMAIL=Kelo Social <support@kelosocial.eu>
 RESEND_REPLY_TO=support@kelosocial.eu
 ```
+
+**Important :** `PDS_ADMIN_PASSWORD` reste nécessaire uniquement aux opérations administrateur du PDS (suspension, réactivation, suppression, etc.). Ce n'est pas le mot de passe utilisé pour se connecter au tableau de bord. Ne pas le supprimer ni le remplacer par le mot de passe d'un compte utilisateur.
 
 ## Notifications e-mail Resend
 
@@ -71,9 +83,7 @@ REPORT_DB_PATH=/app/data/reports.db
 
 ## Déploiement du report service
 
-Voir :
-
-`services/report-service/deploy.md`
+Voir `services/report-service/deploy.md`.
 
 Le service est volontairement lié à `127.0.0.1:3100` dans Docker. Caddy expose ensuite uniquement HTTPS sur `reports.kelosocial.eu`.
 
@@ -109,14 +119,6 @@ openssl rand -base64 48
 openssl rand -hex 32
 ```
 
-### ADMIN_PASSWORD_HASH
-
-Sur une machine de confiance :
-
-```bash
-node -e "const c=require('crypto');const p=process.argv[1];const s=c.randomBytes(16).toString('hex');console.log(s+':'+c.scryptSync(p,s,64).toString('hex'))" 'VOTRE_MOT_DE_PASSE_TRES_LONG'
-```
-
 Ne jamais commit de vrais secrets dans GitHub.
 
 ## Déploiement du site
@@ -132,4 +134,3 @@ Le site Next.js reste déployé sur Vercel.
 ## Important
 
 Le service de rapports n'est pas encore branché au PDS. Il doit d'abord être déployé, exposer son DID document, être testé, puis seulement la configuration du PDS pourra être basculée.
-
