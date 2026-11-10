@@ -1,0 +1,33 @@
+name: Verify moderation dashboard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      SESSION_SECRET: "ci-session-secret-at-least-32-characters-long"
+      ADMIN_PASSWORD_HASH: "ci-salt:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      PDS_URL: "https://pds.kelosocial.eu"
+      PDS_ADMIN_PASSWORD: "ci-placeholder"
+      RESEND_API_KEY: "re_test_placeholder"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript check
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build
