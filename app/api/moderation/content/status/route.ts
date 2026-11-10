@@ -14,14 +14,19 @@ export async function POST(request: Request) {
     if (typeof body?.uri !== 'string' || !body.uri.startsWith('at://')) {
       return NextResponse.json({ error: 'A valid AT URI is required' }, { status: 400 })
     }
+    if (typeof body?.cid !== 'string' || !body.cid.startsWith('b')) {
+      return NextResponse.json({ error: 'A valid record CID is required to apply a takedown.' }, { status: 400 })
+    }
+    if (body.action !== 'takedown' && body.action !== 'restore') {
+      return NextResponse.json({ error: 'Unsupported content action' }, { status: 400 })
+    }
 
-    const response = await pdsRequest('/xrpc/com.atproto.admin.updateSubjectStatus', {
-      subject: { $type: 'com.atproto.admin.defs#record', uri: body.uri },
+    const result = await pdsRequest('/xrpc/com.atproto.admin.updateSubjectStatus', {
+      subject: { $type: 'com.atproto.repo.strongRef', uri: body.uri, cid: body.cid },
       takedown: { applied: body.action === 'takedown' },
     })
-
-    return NextResponse.json(response.data, { status: response.response.status })
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Request failed' }, { status: 500 })
+    return NextResponse.json(result.data, { status: result.response.status })
+  } catch {
+    return NextResponse.json({ error: 'Unable to contact the PDS. Check the server-side PDS credentials.' }, { status: 503 })
   }
 }
