@@ -11,17 +11,19 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
-    if (typeof body?.did !== 'string' || !body.did.startsWith('did:')) {
+    if (typeof body?.did !== 'string' || !/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/.test(body.did)) {
       return NextResponse.json({ error: 'A valid DID is required' }, { status: 400 })
     }
+    if (body.action !== 'suspend' && body.action !== 'reactivate') {
+      return NextResponse.json({ error: 'Unsupported account action' }, { status: 400 })
+    }
 
-    const response = await pdsRequest('/xrpc/com.atproto.admin.updateSubjectStatus', {
+    const result = await pdsRequest('/xrpc/com.atproto.admin.updateSubjectStatus', {
       subject: { $type: 'com.atproto.admin.defs#repoRef', did: body.did },
       deactivated: { applied: body.action === 'suspend' },
     })
-
-    return NextResponse.json(response.data, { status: response.response.status })
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Request failed' }, { status: 500 })
+    return NextResponse.json(result.data, { status: result.response.status })
+  } catch {
+    return NextResponse.json({ error: 'Unable to contact the PDS. Check the server-side PDS credentials.' }, { status: 503 })
   }
 }
