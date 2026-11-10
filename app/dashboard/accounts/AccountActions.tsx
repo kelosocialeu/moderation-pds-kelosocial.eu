@@ -5,10 +5,12 @@ import { useState } from 'react'
 export function AccountActions({ did, deactivated }: { did: string; deactivated: boolean }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [success, setSuccess] = useState(false)
 
   async function request(path: string, body: unknown) {
     setBusy(true)
     setMessage('')
+    setSuccess(false)
     try {
       const response = await fetch(path, {
         method: 'POST',
@@ -17,7 +19,9 @@ export function AccountActions({ did, deactivated }: { did: string; deactivated:
       })
       const data = await response.json().catch(() => null)
       if (!response.ok) throw new Error(data?.error || 'Action impossible')
-      window.location.reload()
+      setSuccess(true)
+      setMessage(data?.message || 'Action effectuée.')
+      window.setTimeout(() => window.location.reload(), 1800)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Action impossible')
       setBusy(false)
@@ -30,14 +34,14 @@ export function AccountActions({ did, deactivated }: { did: string; deactivated:
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, maxWidth: 360 }}>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
         {deactivated
           ? <button className="btn" disabled={busy} onClick={() => request('/api/moderation/account/status', { did, action: 'reactivate' })}>Réactiver</button>
           : <button className="btn" disabled={busy} onClick={() => request('/api/moderation/account/status', { did, action: 'suspend' })}>Suspendre</button>}
         <button className="btn" disabled={busy} onClick={deleteAccount}>Supprimer</button>
       </div>
-      {message && <span className="error">{message}</span>}
+      {message && <span role="status" style={{ color: success ? 'var(--ok)' : 'var(--danger)', fontSize: 12, textAlign: 'right' }}>{message}</span>}
     </div>
   )
 }
