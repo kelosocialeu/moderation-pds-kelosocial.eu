@@ -74,11 +74,35 @@ async function addStatuses(collected: Array<{ did: string; handle?: string; emai
   const accounts: Account[] = []
   for (let i = 0; i < collected.length; i += 10) {
     const batch = await Promise.all(collected.slice(i, i + 10).map(async (account): Promise<Account> => {
+      let details = account
+      // searchAccounts and older indexes can omit the handle or email; ask the admin API directly.
+      if (!account.handle || !account.email) {
+        try {
+          const info = await pdsRequest('/xrpc/com.atproto.admin.getAccountInfo?did=' + encodeURIComponent(account.did))
+          if (info.response.ok && info.data && typeof info.data === 'object') {
+            const extra = info.data as { handle?: string; email?: string; indexedAt?: string; deactivatedAt?: string }
+            details = {
+              ...account,
+              handle: account.handle || extra.handle,
+              email: account.email || extra.email,
+              indexedAt: account.indexedAt || extra.indexedAt,
+              deactivatedAt: account.deactivatedAt || extra.deactivatedAt,
+            }
+          } else {
+            console.warn('[Kelo Moderation] getAccountInfo did not return details for:', account.did, info.response.status)
+          }
+        } catch (error) {
+          console.error('[Kelo Moderation] getAccountInfo failed for:', account.did, error instanceof Error ? error.message : 'unknown error')
+        }
+      }
+
       try {
         const status = await pdsRequest('/xrpc/com.atproto.admin.getSubjectStatus?did=' + encodeURIComponent(account.did))
         const state = status.response.ok && status.data && typeof status.data === 'object' ? status.data as { deactivated?: { applied?: boolean }; takedown?: { applied?: boolean } } : {}
-        return { did: account.did, handle: account.handle, email: account.email, indexedAt: account.indexedAt, deactivated: Boolean(account.deactivatedAt) || Boolean(state.deactivated?.applied), takedown: Boolean(state.takedown?.applied) }
-      } catch { return { did: account.did, handle: account.handle, email: account.email, indexedAt: account.indexedAt, deactivated: Boolean(account.deactivatedAt), takedown: false } }
+        return { did: details.did, handle: details.handle, email: details.email, indexedAt: details.indexedAt, deactivated: Boolean(details.deactivatedAt) || Boolean(state.deactivated?.applied), takedown: Boolean(state.takedown?.applied) }
+      } catch {
+        return { did: details.did, handle: details.handle, email: details.email, indexedAt: details.indexedAt, deactivated: Boolean(details.deactivatedAt), takedown: false }
+      }
     }))
     accounts.push(...batch)
   }
