@@ -5,6 +5,10 @@ import { ThemeProvider } from './theme-provider'
 export const metadata: Metadata = {
   title: 'Kelo Moderation',
   description: 'Console privée de modération Kelo Social',
+  icons: {
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
+    shortcut: ['/icon.svg'],
+  },
   robots: { index: false, follow: false, noarchive: true, nosnippet: true },
 }
 
