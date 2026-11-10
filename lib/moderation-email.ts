@@ -3,13 +3,14 @@ import 'server-only'
 type ModerationEmailAction = 'suspended' | 'deleted'
 
 function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (character) => ({
+  const entities: Record<string, string> = {
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',
     '"': '&quot;',
     "'": '&#39;',
-  })[character] || character)
+  }
+  return value.replace(/[&<>"']/g, (character) => entities[character] || character)
 }
 
 export async function sendAccountModerationEmail(input: {
