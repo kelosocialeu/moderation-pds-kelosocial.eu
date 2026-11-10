@@ -109,10 +109,10 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
       <section className="content">
         <div className="top"><div><div className="eyebrow">Kelo Social • Modération</div><h1 className="title">Comptes</h1><p className="subtitle">Tous les comptes du PDS, y compris les comptes désactivés, avec pagination administrative AT Protocol.</p></div><form action="/api/auth/logout" method="post"><button className="btn">Se déconnecter</button></form></div>
         <div className="grid">
-          <div className="card"><div className="label">Total des comptes</div><div className="metric">{allAccounts.length}</div></div>
-          <div className="card"><div className="label">Actifs</div><div className="metric">{activeCount}</div></div>
-          <div className="card"><div className="label">Désactivés</div><div className="metric">{deactivatedCount}</div></div>
-          <div className="card"><div className="label">Retirés par modération</div><div className="metric">{takedownCount}</div></div>
+          <div className="card"><div className="label">Total des comptes</div><div className="metric">{loaded.error ? "—" : allAccounts.length}</div></div>
+          <div className="card"><div className="label">Actifs</div><div className="metric">{loaded.error ? "—" : activeCount}</div></div>
+          <div className="card"><div className="label">Désactivés</div><div className="metric">{loaded.error ? "—" : deactivatedCount}</div></div>
+          <div className="card"><div className="label">Retirés par modération</div><div className="metric">{loaded.error ? "—" : takedownCount}</div></div>
         </div>
         <section className="card queue">
           <div className="eyebrow">PDS • did:web:pds.kelosocial.eu • {loaded.source === 'admin-index' ? 'Index administratif' : loaded.source === 'repo-index' ? 'Index des dépôts (secours)' : 'Connexion à vérifier'}</div><h2>{accounts.length} compte{accounts.length > 1 ? 's' : ''}{query ? ' trouvé(s)' : ' au total'}</h2>
