@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { isValidSession, sessionCookie } from '@/lib/auth'
-import { pdsRequest } from '@/lib/pds'
+import { pdsPublicRequest, pdsRequest } from '@/lib/pds'
 import { AccountActions } from './AccountActions'
 
 type RepoEntry = { did: string; active?: boolean; status?: string; rev?: string }
@@ -89,7 +89,7 @@ async function getAccounts(): Promise<AccountLoad> {
     do {
       const query = new URLSearchParams({ limit: '1000' })
       if (cursor) query.set('cursor', cursor)
-      const result = await pdsRequest('/xrpc/com.atproto.sync.listRepos?' + query.toString())
+      const result = await pdsPublicRequest('/xrpc/com.atproto.sync.listRepos?' + query.toString())
       if (!result.response.ok) {
         const body = result.data as { error?: string; message?: string } | null
         throw new Error(`listRepos HTTP ${result.response.status}${body?.error ? ` (${body.error})` : ''}`)
