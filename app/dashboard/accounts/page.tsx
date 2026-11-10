@@ -15,17 +15,20 @@ async function getAccounts(): Promise<Account[]> {
     // Use the administrative account index, not listRepos: it includes accounts
     // that are deactivated and supports cursor pagination.
     do {
-      const query = new URLSearchParams({ limit: '100' })
+      const query = new URLSearchParams({ email: '', limit: '100' })
       if (cursor) query.set('cursor', cursor)
       const result = await pdsRequest(`/xrpc/com.atproto.admin.searchAccounts?${query.toString()}`)
       if (!result.response.ok || !result.data || typeof result.data !== 'object') {
         throw new Error('PDS account search failed')
       }
       const payload = result.data as { accounts?: Array<{ did?: string; handle?: string; email?: string; indexedAt?: string; deactivatedAt?: string }>; cursor?: string }
-      const batch = payload.accounts ?? []
+      if (!Array.isArray(payload.accounts)) throw new Error('Réponse searchAccounts invalide')
+      const batch = payload.accounts
       collected.push(...batch.filter((account): account is typeof account & { did: string } => typeof account.did === 'string'))
-      cursor = payload.cursor
+      const nextCursor = payload.cursor
       pages += 1
+      if (nextCursor && nextCursor === cursor) throw new Error('Pagination du PDS bloquée')
+      cursor = nextCursor
     } while (cursor && pages < 100)
 
     const accounts: Account[] = []
@@ -58,7 +61,8 @@ async function getAccounts(): Promise<Account[]> {
       accounts.push(...batch)
     }
     return accounts
-  } catch {
+  } catch (error) {
+    console.error('[Kelo Moderation] Chargement des comptes PDS impossible:', error)
     return []
   }
 }
