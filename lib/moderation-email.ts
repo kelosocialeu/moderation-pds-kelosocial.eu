@@ -117,7 +117,7 @@ export async function sendAccountModerationEmail(input: {
     '',
     'Message automatique envoyé par Kelo Modération.',
     'Kelo Social — https://kelosocial.eu',
-  ].join('\\n')
+  ].join('\n')
 
   const idempotencyKey = randomUUID()
   const payload = JSON.stringify({
