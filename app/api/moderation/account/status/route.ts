@@ -37,13 +37,15 @@ export async function POST(request: Request) {
     })
     if (!result.response.ok) {
       console.error('[Kelo Moderation] updateSubjectStatus rejected:', result.response.status, result.data)
-      return NextResponse.json({ error: 'Le PDS a refusé cette opération.', details: result.data }, { status: result.response.status })
+      const error = result.response.status === 401 ? 'Authentification administrateur refusée par le PDS. Vérifiez PDS_ADMIN_PASSWORD dans Vercel.' : result.response.status === 403 ? 'Le PDS refuse les droits administrateur/modérateur à ce compte.' : 'Le PDS a refusé cette opération.'
+      return NextResponse.json({ error, details: result.data }, { status: result.response.status })
     }
 
     // Verify the effective status on the PDS instead of trusting only the write response.
     const verification = await pdsRequest('/xrpc/com.atproto.admin.getSubjectStatus?did=' + encodeURIComponent(body.did))
     if (!verification.response.ok || !verification.data || typeof verification.data !== 'object') {
-      return NextResponse.json({ error: 'Le PDS a accepté la demande, mais son statut ne peut pas être vérifié. Actualisez la liste avant toute nouvelle action.' }, { status: 502 })
+      const error = verification.response.status === 401 ? 'Le PDS refuse l’authentification administrateur lors de la vérification. Vérifiez PDS_ADMIN_PASSWORD dans Vercel.' : verification.response.status === 403 ? 'Le compte administrateur ne peut pas lire le statut de ce compte.' : 'Le PDS a accepté la demande, mais son statut ne peut pas être vérifié. Actualisez la liste avant toute nouvelle action.'
+      return NextResponse.json({ error }, { status: 502 })
     }
     const verified = verification.data as { deactivated?: { applied?: boolean } }
     const expectedDeactivated = body.action === 'suspend'
